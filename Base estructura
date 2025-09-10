@@ -1,0 +1,153 @@
+
+### **Correcciones y Verificaciones**:
+
+1. **`SERIAL` para las claves primarias**: PostgreSQL usa `SERIAL` para autoincrementar las claves primarias, lo cual está correctamente implementado en todas las tablas.
+2. **Tipos de datos**:
+
+   * Para el campo `estado_inscripcion`, utilicé un **tipo ENUM** personalizado que es soportado por PostgreSQL (con la creación de un tipo `estado_inscripcion`).
+   * Las demás columnas tienen tipos de datos estándar para las bases de datos relacionales como **`VARCHAR`**, **`DECIMAL`**, **`DATE`**, y **`BOOLEAN`**.
+3. **Relaciones entre las tablas**:
+
+   * Las relaciones se gestionan con **`FOREIGN KEY`** correctamente definidas en cada tabla.
+   * Los **`REFERENCES`** aseguran que los valores se validen correctamente entre las tablas (por ejemplo, `id_estudiante` en **pagos** y **matriculas** hace referencia a `id_estudiante` en **estudiantes**).
+
+---
+
+### **Tablas Definidas y Relacionadas**
+
+#### **1. Tabla: Estudiantes**
+
+```sql
+CREATE TYPE estado_inscripcion AS ENUM ('Pendiente', 'Listo', 'Cancelado');
+
+CREATE TABLE estudiantes (
+  id_estudiante SERIAL PRIMARY KEY, 
+  nombre VARCHAR(100),
+  apellido VARCHAR(100),
+  dni VARCHAR(8) UNIQUE,
+  email VARCHAR(100) UNIQUE,
+  telefono VARCHAR(15),
+  direccion TEXT,
+  fecha_nacimiento DATE,
+  nivel VARCHAR(20), -- Primaria o Secundaria
+  grado INT, -- 1 a 6 para Primaria, 1 a 5 para Secundaria
+  estado_inscripcion estado_inscripcion DEFAULT 'Pendiente', -- Estado de la inscripción
+  id_padre INT, -- Relacionado con la tabla de padres
+  CONSTRAINT fk_padre FOREIGN KEY (id_padre) REFERENCES padres(id_padre) -- Relación con los padres
+);
+```
+
+* **`estado_inscripcion`**: Ahora es un tipo **`ENUM`** que incluye tres valores posibles: **Pendiente**, **Listo** y **Cancelado**.
+* **`id_padre`**: Relacionado con la tabla **padres**, asegurando que cada estudiante tenga un padre/tutor.
+
+---
+
+#### **2. Tabla: Padres**
+
+```sql
+CREATE TABLE padres (
+  id_padre SERIAL PRIMARY KEY,
+  nombre VARCHAR(100),
+  apellido VARCHAR(100),
+  dni VARCHAR(8) UNIQUE,
+  email VARCHAR(100),
+  telefono VARCHAR(15)
+);
+```
+
+* **`id_padre`**: Es la clave primaria única para cada padre o tutor. No se requiere más complejidad en esta tabla, ya que su función es almacenar los datos básicos de los tutores de los estudiantes.
+
+---
+
+#### **3. Tabla: Pagos**
+
+```sql
+CREATE TABLE pagos (
+  id_pago SERIAL PRIMARY KEY,
+  id_estudiante INT REFERENCES estudiantes(id_estudiante), -- Relación con estudiantes
+  monto DECIMAL(10, 2), -- Monto pagado
+  fecha_pago DATE, -- Fecha en que se realizó el pago
+  metodo_pago VARCHAR(50), -- Ejemplo: "Transferencia", "Efectivo", "Tarjeta"
+  estado_pago BOOLEAN DEFAULT FALSE -- Estado del pago: TRUE si se ha confirmado el pago
+);
+```
+
+* **`estado_pago`**: Se establece como **`BOOLEAN`**, con un valor por defecto de **`FALSE`** hasta que el pago sea confirmado.
+
+---
+
+#### **4. Tabla: Matrículas**
+
+```sql
+CREATE TABLE matriculas (
+  id_matricula SERIAL PRIMARY KEY,
+  id_estudiante INT REFERENCES estudiantes(id_estudiante), -- Relación con estudiantes
+  fecha_matricula DATE DEFAULT CURRENT_DATE, -- Fecha de la matrícula
+  estado_matricula BOOLEAN DEFAULT FALSE, -- Estado de la matrícula: TRUE si está matriculado
+  id_pago INT REFERENCES pagos(id_pago), -- Relación con la tabla de pagos para confirmar que se ha realizado el pago
+  pdf_matricula VARCHAR(255) -- Ruta del archivo PDF generado para la matrícula
+);
+```
+
+* **`pdf_matricula`**: Guarda la **ruta del archivo PDF** generado al finalizar el proceso de matrícula.
+* **`estado_matricula`**: Indicador **BOOLEAN** para saber si el estudiante ha sido matriculado.
+
+---
+
+### **Relaciones Correctas entre Tablas**
+
+1. **Estudiantes y Padres**:
+
+   * Un estudiante tiene un **padre** o **tutor**, pero un padre puede tener varios estudiantes.
+   * Relación **1\:N**: La tabla **estudiantes** tiene una clave foránea `id_padre` que hace referencia a la tabla **padres**.
+
+2. **Estudiantes y Pagos**:
+
+   * Un estudiante puede realizar **varios pagos**, pero cada pago pertenece a un solo estudiante.
+   * Relación **1\:N**: La tabla **pagos** tiene una clave foránea `id_estudiante` que hace referencia a la tabla **estudiantes**.
+
+3. **Pagos y Matrículas**:
+
+   * Un pago se relaciona con **una matrícula**, y una matrícula tiene **un pago**.
+   * Relación **1:1**: La tabla **matriculas** tiene una clave foránea `id_pago` que hace referencia a la tabla **pagos**.
+
+4. **Estudiantes y Matrículas**:
+
+   * Un estudiante tiene **una matrícula** (una vez que se confirma su pago).
+   * Relación **1:1**: La tabla **matriculas** tiene una clave foránea `id_estudiante` que hace referencia a la tabla **estudiantes**.
+
+---
+
+### **Flujo de Inscripción y Matrícula**
+
+1. **Inscripción**:
+
+   * El estudiante completa el formulario de inscripción, que se guarda en la tabla **estudiantes**.
+   * El **padre o tutor** también se puede registrar en la tabla **padres** si no existe, y luego se relaciona con el estudiante.
+
+2. **Pago**:
+
+   * El estudiante realiza el pago, y la información del pago se guarda en la tabla **pagos**.
+   * El estado del pago se establece en **TRUE** cuando el pago es confirmado.
+
+3. **Matrícula**:
+
+   * Una vez confirmado el pago, el estudiante es matriculado.
+   * Se crea un registro en la tabla **matriculas**, se establece `estado_matricula = TRUE`, y se genera un **PDF** con la matrícula que se almacena en el servidor. La ruta del archivo PDF se guarda en la columna `pdf_matricula` de la tabla **matriculas**.
+
+---
+
+### **Resúmen Final de las Tablas y Relaciones**
+
+1. **Tabla de Estudiantes**: Almacena la información del estudiante, incluyendo su nivel (Primaria o Secundaria), grado y la relación con el padre o tutor.
+2. **Tabla de Padres**: Almacena los datos del padre o tutor, y se vincula con los estudiantes a través de la columna `id_padre`.
+3. **Tabla de Pagos**: Almacena los pagos realizados por los estudiantes, incluyendo el monto, fecha y método de pago. Cada pago se relaciona con un estudiante.
+4. **Tabla de Matrículas**: Almacena el estado de la matrícula de un estudiante, incluyendo la ruta del archivo PDF generado para la matrícula.
+
+---
+
+### **Próximos Pasos**
+
+* Ahora puedes ejecutar estos scripts directamente en **pgAdmin** para crear las tablas y relaciones de tu base de datos en PostgreSQL.
+* Si necesitas ayuda con la inserción de datos o algún otro aspecto, no dudes en pedírmelo.
+
